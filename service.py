@@ -17,6 +17,19 @@ def search_startup(q: str):
     }
 
 
+@app.get("/api/scroll")
+def scroll_startup(filename: str):
+    return {
+        "result": neural_searcher.scroll(filename=filename)
+    }
+
+@app.get("/api/get_all")
+def get_all():
+    return {
+        "result": neural_searcher.get_all()
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
