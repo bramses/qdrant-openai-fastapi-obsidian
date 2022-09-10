@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 
 # That is the file where NeuralSearcher is stored
-from neural_searcher import NeuralSearcher
+from neural_searcher import NeuralSearcher, open_file_in_obsidian
 
 app = FastAPI()
 
@@ -12,8 +12,10 @@ neural_searcher = NeuralSearcher(collection_name='test-tutorial')
 
 @app.get("/api/search")
 def search_startup(q: str):
+    search_results = neural_searcher.search(query=q)
     return {
-        "result": neural_searcher.search(query=q)
+        "result": search_results,
+        "obsidianURIS": list(map(lambda x: open_file_in_obsidian(vault="vault", filename=x["filename"]), search_results))
     }
 
 

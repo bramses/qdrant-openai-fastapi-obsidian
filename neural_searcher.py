@@ -1,39 +1,49 @@
 # Import client library
+import urllib.parse
 from qdrant_client.http.models import Filter, FieldCondition, MatchValue
 from qdrant_client import QdrantClient
 import os
 import openai
+import logging
 from dotenv import load_dotenv
 load_dotenv()
 
 
 openai.organization = os.getenv("OPENAI_ORG")
 openai.api_key = os.getenv("OPENAI_API_KEY")
+logging.basicConfig(level=logging.INFO)
 
 
 class NeuralSearcher:
 
     qdrant_client = None
+    file_directory = None
 
     def __init__(self, collection_name):
+        logging.info("Initializing NeuralSearcher")
         self.collection_name = collection_name
         self.qdrant_client = QdrantClient(host='localhost', port=6333)
-        # my_collection_info = self.qdrant_client.http.collections_api.get_collection(
-        #     collection_name)
+        self.file_directory = "data"
 
-        # create_collection(collection_name=collection_name, qdrant_client=self.qdrant_client)
-        # filenames = os.listdir("data")
-        # # print(filenames)
-        # embeddings = create_embeddings(filenames)
+    def get_collection_info(self):
+        logging.info("Getting collection info for {collection_name}".format(collection_name=self.collection_name))
+        return self.qdrant_client.http.collections_api.get_collection(self.collection_name)
 
-        # vectors = map(lambda x: x["embedding"], embeddings)
-        # vectors = list(vectors)
-        # payload = map(lambda x: { "filename": x }, filenames)
+    def recreate_collection_from_scratch(self):
+        create_collection(collection_name=self.collection_name, qdrant_client=self.qdrant_client)
+        filenames = os.listdir(self.file_directory)
+        # print(filenames)
+        embeddings = create_embeddings(filenames)
 
-        # upload_data(collection_name=collection_name, vectors=vectors, payload=payload, qdrant_client=self.qdrant_client)
+        vectors = map(lambda x: x["embedding"], embeddings)
+        vectors = list(vectors)
+        payload = map(lambda x: { "filename": x }, filenames)
+
+        upload_data(collection_name=self.collection_name, vectors=vectors, payload=payload, qdrant_client=self.qdrant_client)
 
     def upload_data(self):
-        filenames = os.listdir("data")
+        logging.info("Uploading data to {collection_name}".format(collection_name=self.collection_name))
+        filenames = os.listdir(self.file_directory)
         embeddings = create_embeddings(filenames)
         vectors = map(lambda x: x["embedding"], embeddings)
         vectors = list(vectors)
@@ -41,8 +51,8 @@ class NeuralSearcher:
         upload_data(collection_name=self.collection_name, vectors=vectors,
                     payload=payload, qdrant_client=self.qdrant_client)
 
-    def search(self, query, top=10):
-        return search(collection_name=self.collection_name, query=query, top=top, qdrant_client=self.qdrant_client)
+    def search(self, query, top=3):
+        return search(collection_name=self.collection_name, query=query, top=top, qdrant_client=self.qdrant_client)        
 
     def scroll(self, filename):
         return self.qdrant_client.scroll(
@@ -65,7 +75,6 @@ class NeuralSearcher:
         points = []
         next_page_offset = 0
 
-
         while True:
             res = self.qdrant_client.scroll(
                 collection_name=self.collection_name,
@@ -74,73 +83,88 @@ class NeuralSearcher:
                 with_vector=False,
                 offset=next_page_offset
             )
-            
+
             points.append(res[0])
             next_page_offset = res[1]
-
 
             if res[1] == None:
                 break
 
-
-        # compare with files in data folder
-        points_list = list(points[0])
-        # print(list(points_list)[0].payload["filename"])
-        filenames = recursive("data", [])
-        point_filenames = list(map(lambda x: x.payload["filename"], points_list))
-        ins, delt = compare_lists(filenames, point_filenames)
-        print("Inserted: ", ins)
-        print("Deleted: ", delt)
-
-        
         return points
+
+
+    def file_comparison(self):
+        logging.info("Comparing files in data folder for insertion and deletion -- {collection_name}".format(collection_name=self.collection_name))
+        points = self.get_all()
+        points_list = list(points[0])
+        filenames = recursive("data", []) #`recursive` is a function that recursively gets all the filenames in a directory
+        point_filenames = list(
+            map(lambda x: x.payload["filename"], points_list))
+        ins, delt = compare_lists(filenames, point_filenames)
+
+        logging.info("Inserting {ins} files".format(ins=ins))
+        logging.info("Deleting {delt} files".format(delt=delt))
+
+        return ins, delt
+
+
+def open_file_in_obsidian(vault, filename):
+    logging.info("Converting {filename} to Obsidian URL".format(filename=filename))
+    url_encoded_filename = urllib.parse.quote_plus(filename)
+    return "obsidian://advanced-uri?vault={vault}&filepath={filename}".format(filename=url_encoded_filename, vault=vault)
+
 
 # https://stackoverflow.com/questions/49273647/python-recursive-function-by-using-os-listdir
 def recursive(dir, all_files=[]):
     files = os.listdir(dir)
     for obj in files:
-        
-        if os.path.isfile(os.path.join(dir,obj)):
-            print ("File : "+os.path.join(dir,obj))
+
+        if os.path.isfile(os.path.join(dir, obj)):
+            logging.debug("File : "+os.path.join(dir, obj))
             all_files.append(obj)
-        elif os.path.isdir(os.path.join(dir,obj)):
-            print('called on dir: ', os.path.join(dir,obj))
+        elif os.path.isdir(os.path.join(dir, obj)):
+            logging.debug('called on dir: ', os.path.join(dir, obj))
             recursive(os.path.join(dir, obj), all_files)
         else:
-            print('Not a directory or file %s' % (os.path.join(dir, obj)))
-    
+            logging.error('Not a directory or file %s' % (os.path.join(dir, obj)))
+
     return all_files
+
 
 def compare_lists(filenames, points):
     to_insert = []
     to_delete = []
 
-    print(filenames)
-    print(points)
+    logging.info("Comparing {filenames} and {points}".format(filenames=len(filenames), points=len(points)))
 
     for filename in filenames:
         if filename not in points:
             to_insert.append(filename)
-        
+
     for point in points:
         if point not in filenames:
             to_delete.append(point)
+
+    logging.info("Inserted: ", to_insert)
+    logging.info("Deleted: ", to_delete)
     
     return to_insert, to_delete
 
 def create_embeddings(query, model="text-search-davinci-doc-001"):
+    logging.info("Creating embeddings for {query} with model = {model}".format(query=query, model=model))
     response = openai.Embedding.create(
         model=model,
         input=query
     )
 
     if not response.data:
-        print("No data returned")
+        logging.error("No data returned from OpenAI Embedding API")
         return
     return response.data
 
 
 def create_collection(collection_name, qdrant_client=None):
+    logging.info("Creating collection {collection_name}".format(collection_name=collection_name))
     qdrant_client.recreate_collection(
         collection_name=collection_name,
         vector_size=12288,
@@ -149,6 +173,7 @@ def create_collection(collection_name, qdrant_client=None):
 
 
 def upload_data(collection_name, vectors, payload, qdrant_client=None):
+    logging.info("Uploading data to {collection_name}".format(collection_name=collection_name))
     qdrant_client.upload_collection(
         collection_name=collection_name,
         vectors=vectors,
