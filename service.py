@@ -10,10 +10,10 @@ from pydantic import BaseModel
 class Item(BaseModel):
     filenames: List[str]
 
-app = FastAPI()
+app = FastAPI(debug=True)
 
 # Create an instance of the neural searcher
-neural_searcher = NeuralSearcher(collection_name='test-tutorial', filenames=recursive("data", []))
+neural_searcher = NeuralSearcher(collection_name='to-go-brain', filenames=recursive("data", []))
 
 @app.get("/api/search")
 def search_startup(q: str, vault: str):
@@ -36,6 +36,12 @@ def get_all():
         "result": neural_searcher.get_all()
     }
 
+
+@app.get("/api/recreate")
+def recreate():
+    return {
+        "result": neural_searcher.recreate_collection_from_scratch()
+    }
 
 @app.post("/api/upload_filenames")
 def upload_filenames(files: Item):

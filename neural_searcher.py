@@ -1,6 +1,6 @@
 # Import client library
 import urllib.parse
-from qdrant_client.http.models import Filter, FieldCondition, MatchValue, FilterSelector
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue, FilterSelector, Batch
 from qdrant_client import QdrantClient
 import os
 import openai
@@ -20,12 +20,13 @@ class NeuralSearcher:
     qdrant_client = None
     file_directory = None
 
-    def __init__(self, collection_name, filenames=[]):
+    def __init__(self, collection_name, filenames=[], DELETE_FILES_FLAG=True):
         logging.info("Initializing NeuralSearcher")
         self.collection_name = collection_name
         self.qdrant_client = QdrantClient(host='localhost', port=6333)
         self.file_directory = "data"
         self.filenames = filenames
+        self.DELETE_FILES_FLAG = DELETE_FILES_FLAG
 
     def get_collection_info(self):
         logging.info("Getting collection info for {collection_name}".format(
@@ -37,17 +38,7 @@ class NeuralSearcher:
             collection_name=self.collection_name))
         create_collection(collection_name=self.collection_name,
                           qdrant_client=self.qdrant_client)
-        filenames = self.filenames
-        # print(filenames)
-        embeddings = create_embeddings(filenames)
-
-        vectors = map(lambda x: x["embedding"], embeddings)
-        vectors = list(vectors)
-        payload = map(lambda x: {"filename": x}, filenames)
-
-        upload_data(collection_name=self.collection_name, vectors=vectors,
-                    payload=payload, qdrant_client=self.qdrant_client)
-
+        
     def delete_points_by_filename(self, filenames):
         logging.info("Deleting points by filename -- {collection_name}".format(
             collection_name=self.collection_name))
@@ -76,22 +67,20 @@ class NeuralSearcher:
             to_delete=to_delete))
 
         if len(to_add) > 0:
-            embeddings = create_embeddings(to_add)
-            vectors = map(lambda x: x["embedding"], embeddings)
-            vectors = list(vectors)
-            payload = map(lambda x: {"filename": x}, to_add)
-            upload_data(collection_name=self.collection_name, vectors=vectors,
-                        payload=payload, qdrant_client=self.qdrant_client)
+            # batch into 100 size chunks
+            logging.info("Adding {len} files".format(len=len(to_add)))
+            for i in range(0, len(to_add), 100):
+                batch = to_add[i:i + 100]
+                embeddings = create_embeddings(batch)
+                vectors = map(lambda x: x["embedding"], embeddings)
+                vectors = list(vectors)
+                payload = map(lambda x: {"filename": x}, batch)
+                upload_data(collection_name=self.collection_name, vectors=vectors,
+                            payload=payload, qdrant_client=self.qdrant_client)
 
-        if len(to_delete) > 0:
+        if len(to_delete) > 0 and self.DELETE_FILES_FLAG:
             self.delete_points_by_filename(filenames=to_delete)
 
-        # embeddings = create_embeddings(filenames)
-        # vectors = map(lambda x: x["embedding"], embeddings)
-        # vectors = list(vectors)
-        # payload = map(lambda x: {"filename": x}, filenames)
-        # upload_data(collection_name=self.collection_name, vectors=vectors,
-        #             payload=payload, qdrant_client=self.qdrant_client)
 
     def search(self, query, top=3):
         return search(collection_name=self.collection_name, query=query, top=top, qdrant_client=self.qdrant_client)
@@ -114,13 +103,16 @@ class NeuralSearcher:
         )
 
     def get_all(self):
+        logging.info("Getting all points -- {collection_name}".format(
+            collection_name=self.collection_name))
+
         points = []
         next_page_offset = 0
 
         while True:
             res = self.qdrant_client.scroll(
                 collection_name=self.collection_name,
-                limit=1000,
+                limit=100,
                 with_payload=True,
                 with_vector=False,
                 offset=next_page_offset
@@ -132,13 +124,18 @@ class NeuralSearcher:
             if res[1] == None:
                 break
 
-        return points
+
+        flat_list = [item for sublist in points for item in sublist]
+
+        logging.info("Got {len} points".format(len=len(flat_list)))
+
+        return flat_list
 
     def file_comparison(self, filenames):
         logging.info("Comparing files in data folder for insertion and deletion -- {collection_name}".format(
             collection_name=self.collection_name))
         points = self.get_all()
-        points_list = list(points[0])
+        points_list = list(points)
 
         point_filenames = list(
             map(lambda x: x.payload["filename"], points_list))
@@ -223,13 +220,14 @@ def create_collection(collection_name, qdrant_client=None):
 def upload_data(collection_name, vectors, payload, qdrant_client=None):
     logging.info("Uploading data to {collection_name}".format(
         collection_name=collection_name))
+
     qdrant_client.upload_collection(
         collection_name=collection_name,
         vectors=vectors,
         payload=payload,
         # Vector ids will be assigned automatically
         ids=[str(uuid.uuid4()) for v in range(len(vectors))],
-        batch_size=256  # How many vectors will be uploaded in a single request?
+        batch_size=100  # How many vectors will be uploaded in a single request?
     )
 
 
@@ -263,4 +261,15 @@ TODO:
    - if something is deleted, remove it from the collection
 - host the service on a server
 - create an ios shortcut that calls the service
+
+
+embeddings = create_embeddings(filenames)
+
+        vectors = map(lambda x: x["embedding"], embeddings)
+        vectors = list(vectors)
+        payload = map(lambda x: {"filename": x}, filenames)
+
+        upload_data(collection_name=self.collection_name, vectors=vectors,
+                    payload=payload, qdrant_client=self.qdrant_client)
+
 '''
