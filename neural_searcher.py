@@ -150,7 +150,7 @@ class NeuralSearcher:
 def open_file_in_obsidian(vault, filename):
     logging.info(
         "Converting {filename} to Obsidian URL".format(filename=filename))
-    url_encoded_filename = urllib.parse.quote_plus(filename)
+    url_encoded_filename = urllib.parse.quote(filename)
     return "obsidian://advanced-uri?vault={vault}&filepath={filename}".format(filename=url_encoded_filename, vault=vault)
 
 
