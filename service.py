@@ -6,68 +6,39 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from neural_searcher import NeuralSearcher, open_file_in_obsidian, recursive
 from typing import List, Union
 from pydantic import BaseModel
-
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-class Item(BaseModel):
-    filenames: List[str]
-
 fake_users_db = {
-    "johndoe": {
-        "username": "johndoe",
-        "full_name": "John Doe",
-        "email": "johndoe@example.com",
-        "hashed_password": "fakehashedsecret",
-        "disabled": False,
-    },
-    "alice": {
-        "username": "alice",
-        "full_name": "Alice Wonderson",
-        "email": "alice@example.com",
-        "hashed_password": "fakehashedsecret2",
-        "disabled": True,
-    },
+    os.getenv("USERNAME"): {
+        "username": os.getenv("USERNAME"),
+        "password": os.getenv("PASSWORD"),
+    }
+
 }
-
-def fake_hash_password(password: str):
-    return "fakehashed" + password
-
 
 
 class User(BaseModel):
     username: str
-    email: Union[str, None] = None
-    full_name: Union[str, None] = None
-    disabled: Union[bool, None] = None
 
 
 class UserInDB(User):
-    hashed_password: str
+    password: str
 
 app = FastAPI(debug=True)
 
 
-def fake_decode_token(token):
-    return User(
-        username=token + "fakedecoded", email="john@example.com", full_name="John Doe"
-    )
-
-
 async def get_current_user(token: str = Depends(oauth2_scheme)):
-    user = fake_decode_token(token)
-    return user
-
-
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    user = fake_decode_token(token)
-    if not user:
+    if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return user
+    return token
 
 
 async def get_current_active_user(current_user: User = Depends(get_current_user)):
@@ -82,8 +53,8 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if not user_dict:
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     user = UserInDB(**user_dict)
-    hashed_password = fake_hash_password(form_data.password)
-    if not hashed_password == user.hashed_password:
+
+    if not user.password == form_data.password:
         raise HTTPException(status_code=400, detail="Incorrect username or password")
 
     return {"access_token": user.username, "token_type": "bearer"}
@@ -92,11 +63,14 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
 
+class Item(BaseModel):
+    filenames: List[str]
+
 # Create an instance of the neural searcher
 neural_searcher = NeuralSearcher(collection_name='to-go-brain', filenames=recursive("data", []))
 
 @app.get("/api/search")
-def search_startup(q: str, vault: str, token: str = Depends(oauth2_scheme)):
+def search_startup(q: str, vault: str, current_user: User = Depends(get_current_user)):
     search_results = neural_searcher.search(query=q)
     return {
         "result": search_results,
