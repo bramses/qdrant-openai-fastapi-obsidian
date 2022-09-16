@@ -1,6 +1,13 @@
 # File: service.py
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
+
+origins = [
+    "http://localhost:3000",
+    "localhost:3000"
+]
+
 
 # That is the file where NeuralSearcher is stored
 from neural_searcher import NeuralSearcher, open_file_in_obsidian, recursive
@@ -31,6 +38,15 @@ class UserInDB(User):
 app = FastAPI(debug=True)
 
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     if not token:
         raise HTTPException(
@@ -46,6 +62,10 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
+
+@app.get("/")
+async def main():
+    return {"message": "Hello World"}
 
 @app.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
