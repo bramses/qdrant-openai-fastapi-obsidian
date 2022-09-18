@@ -48,19 +48,13 @@ app.add_middleware(
 
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
-    if not token:
+    if not token or token != "bram":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
     return token
-
-
-async def get_current_active_user(current_user: User = Depends(get_current_user)):
-    if current_user.disabled:
-        raise HTTPException(status_code=400, detail="Inactive user")
-    return current_user
 
 
 @app.get("/")
@@ -91,6 +85,7 @@ neural_searcher = NeuralSearcher(collection_name='to-go-brain', filenames=recurs
 
 @app.get("/api/search")
 def search_startup(q: str, vault: str, current_user: User = Depends(get_current_user)):
+    print(current_user)
     search_results = neural_searcher.search(query=q)
     return {
         "result": search_results,
