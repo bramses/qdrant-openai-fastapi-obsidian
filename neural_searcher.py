@@ -38,7 +38,13 @@ class NeuralSearcher:
             collection_name=self.collection_name))
         create_collection(collection_name=self.collection_name,
                           qdrant_client=self.qdrant_client)
-        
+
+    def create_collection(self, collection_name):
+        logging.info("Creating collection -- {collection_name}".format(
+            collection_name=collection_name))
+        create_collection(collection_name=self.collection_name,
+                          qdrant_client=self.qdrant_client)
+
     def delete_points_by_filename(self, filenames):
         logging.info("Deleting points by filename -- {collection_name}".format(
             collection_name=self.collection_name))
@@ -50,12 +56,23 @@ class NeuralSearcher:
                         must=[
                             FieldCondition(
                                 key="filename",
-                                match=MatchValue(value="{filename}".format(filename=filename)),
+                                match=MatchValue(
+                                    value="{filename}".format(filename=filename)),
                             ),
                         ],
                     )
                 ),
             )
+
+    def dry_run(self, filenames):
+        logging.info("Dry run -- {collection_name}".format(
+            collection_name=self.collection_name))
+        to_add, to_delete = self.file_comparison(filenames=filenames)
+        logging.info("Files to add: {to_add}".format(to_add=to_add))
+        logging.info("Files to delete: {to_delete}".format(
+            to_delete=to_delete))
+        
+        return to_add, to_delete
 
     def upload_filenames(self, filenames):
         logging.info("Uploading filenames to {collection_name}".format(
@@ -80,7 +97,6 @@ class NeuralSearcher:
 
         if len(to_delete) > 0 and self.DELETE_FILES_FLAG:
             self.delete_points_by_filename(filenames=to_delete)
-
 
     def search(self, query, top=3):
         return search(collection_name=self.collection_name, query=query, top=top, qdrant_client=self.qdrant_client)
@@ -123,7 +139,6 @@ class NeuralSearcher:
 
             if res[1] == None:
                 break
-
 
         flat_list = [item for sublist in points for item in sublist]
 

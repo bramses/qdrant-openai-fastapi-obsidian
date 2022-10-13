@@ -17,6 +17,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
+'''BEGIN OAUTH'''
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 fake_users_db = {
@@ -57,10 +58,6 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return token
 
 
-@app.get("/")
-async def main():
-    return {"message": "Hello World"}
-
 @app.post("/token")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user_dict = fake_users_db.get(form_data.username)
@@ -76,6 +73,11 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 @app.get("/users/me")
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return current_user
+'''END OAUTH'''
+
+@app.get("/")
+async def main():
+    return {"message": "Hello World"}
 
 class Item(BaseModel):
     filenames: List[str]
@@ -83,6 +85,7 @@ class Item(BaseModel):
 # Create an instance of the neural searcher
 neural_searcher = NeuralSearcher(collection_name='to-go-brain', filenames=recursive("data", []))
 
+# search for k results in the collection with the given query
 @app.get("/api/search")
 def search_startup(q: str, vault: str, current_user: User = Depends(get_current_user)):
     print(current_user)
@@ -93,12 +96,14 @@ def search_startup(q: str, vault: str, current_user: User = Depends(get_current_
     }
 
 
+# get a single file from the collection by filename
 @app.get("/api/scroll")
 def scroll_startup(filename: str):
     return {
         "result": neural_searcher.scroll(filename=filename)
     }
 
+# get all the filenames in the collection
 @app.get("/api/get_all")
 def get_all():
     return {
@@ -112,10 +117,25 @@ def recreate():
         "result": neural_searcher.recreate_collection_from_scratch()
     }
 
+
+@app.get("/api/create")
+def create(collection_name: str):
+    return {
+        "result": neural_searcher.create_collection(collection_name=collection_name)
+    }
+
+# upload a list of filenames to the neural searcher
 @app.post("/api/upload_filenames")
 def upload_filenames(files: Item):
     return {
         "result": neural_searcher.upload_filenames(filenames=files.filenames)
+    }
+
+# dry run file comparison
+@app.post("/api/dry_run")
+def dry_run(files: Item):
+    return {
+        "result": neural_searcher.dry_run(filenames=files.filenames)
     }
 
 if __name__ == "__main__":
